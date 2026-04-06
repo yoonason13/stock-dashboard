@@ -2,20 +2,36 @@ import sys
 import io
 import json
 import os
+import builtins
 from datetime import datetime
 
-# ── UTF-8 강제 설정 (Render 서버 ASCII 로케일 우회) ──────────────────────────
-os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-os.environ.setdefault("PYTHONUTF8", "1")
-try:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
+# ── UTF-8 전역 패치 (Render ASCII 환경 완전 우회) ────────────────────────────
+os.environ["PYTHONIOENCODING"] = "utf-8"
+os.environ["PYTHONUTF8"] = "1"
+
+# stdout/stderr 재설정
+for _s in (sys.stdout, sys.stderr):
     try:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+        _s.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
-        pass
+        try:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+# print() 전역 패치 — 모든 서비스 파일 print()에 적용됨
+_orig_print = builtins.print
+def _safe_print(*args, **kwargs):
+    try:
+        _orig_print(*args, **kwargs)
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        try:
+            safe = tuple(str(a).encode("utf-8", "replace").decode("ascii", "replace") for a in args)
+            _orig_print(*safe, **kwargs)
+        except Exception:
+            pass
+builtins.print = _safe_print
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
