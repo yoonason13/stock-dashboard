@@ -1,6 +1,21 @@
+import sys
+import io
 import json
 import os
 from datetime import datetime
+
+# ── UTF-8 강제 설정 (Render 서버 ASCII 로케일 우회) ──────────────────────────
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("PYTHONUTF8", "1")
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
@@ -198,9 +213,12 @@ def diag():
     except Exception as e:
         results["tavily"] = f"error: {str(e)[:200]}"
 
-    # 3. 환경변수 존재 여부
+    # 3. 환경변수 및 인코딩 상태
     results["ANTHROPIC_API_KEY_set"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
     results["TAVILY_API_KEY_set"] = bool(os.environ.get("TAVILY_API_KEY"))
+    results["stdout_encoding"] = getattr(sys.stdout, "encoding", "unknown")
+    results["PYTHONUTF8"] = os.environ.get("PYTHONUTF8", "not set")
+    results["PYTHONIOENCODING"] = os.environ.get("PYTHONIOENCODING", "not set")
 
     return jsonify(results)
 
