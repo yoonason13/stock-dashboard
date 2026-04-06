@@ -56,6 +56,19 @@ load_dotenv()
 
 app = Flask(__name__)
 
+# API 경로는 모든 에러를 JSON으로 반환
+@app.errorhandler(404)
+def not_found(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "API endpoint not found"}), 404
+    return e
+
+@app.errorhandler(500)
+def internal_error(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": f"서버 내부 오류: {str(e)}"}), 500
+    return e
+
 WATCHLIST_FILE = os.path.join("data", "watchlist.json")
 CACHE_DIR = os.path.join("data", "cache")
 RESEARCH_CACHE_DIR = os.path.join("data", "research_cache")
