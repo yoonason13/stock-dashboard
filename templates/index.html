@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>주식 대시보드 — AI 분석</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div id="loading-bar"></div>
+
+<!-- ── Header ───────────────────────────────────────────────────────────── -->
+<header>
+  <div class="header-left">
+    <div class="header-logo">
+      <svg viewBox="0 0 16 16" fill="currentColor">
+        <path d="M1.5 2.75A.75.75 0 012.25 2h11.5a.75.75 0 010 1.5H2.25a.75.75 0 01-.75-.75zm0 5A.75.75 0 012.25 7h11.5a.75.75 0 010 1.5H2.25A.75.75 0 011.5 7.75zm.75 4.75a.75.75 0 000 1.5h7.5a.75.75 0 000-1.5h-7.5z"/>
+      </svg>
+      주식 AI 대시보드
+    </div>
+    <span class="header-subtitle">Claude AI 분석 · 자동 갱신</span>
+  </div>
+  <div class="header-right">
+    <span id="last-updated"></span>
+    <button class="btn btn-primary" id="refresh-all-btn">
+      <svg viewBox="0 0 16 16" fill="currentColor">
+        <path d="M8 2.5a5.487 5.487 0 00-4.131 1.869l1.204 1.204A.25.25 0 014.896 6H1.25A.25.25 0 011 5.75V2.104a.25.25 0 01.427-.177l1.38 1.38A7.001 7.001 0 0114.95 7.16a.75.75 0 11-1.49.178A5.501 5.501 0 008 2.5zM1.705 8.005a.75.75 0 01.834.656 5.501 5.501 0 009.592 2.97l-1.204-1.204a.25.25 0 01.177-.427h3.646a.25.25 0 01.25.25v3.646a.25.25 0 01-.427.177l-1.38-1.38A7.001 7.001 0 011.05 8.84a.75.75 0 01.656-.834z"/>
+      </svg>
+      전체 갱신
+    </button>
+  </div>
+</header>
+
+<!-- ── Tab Nav ───────────────────────────────────────────────────────────── -->
+<div class="tab-nav">
+  <button class="tab-btn active" id="tab-watchlist" onclick="switchTab('watchlist')">
+    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0zm4.879-2.773l4.264 2.559a.25.25 0 010 .428l-4.264 2.559A.25.25 0 016 10.559V5.442a.25.25 0 01.379-.215z"/></svg>
+    관심 종목
+  </button>
+  <button class="tab-btn" id="tab-research" onclick="switchTab('research')">
+    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M10.68 11.74a6 6 0 01-7.922-8.982 6 6 0 018.982 7.922l3.04 3.04a.749.749 0 11-1.06 1.06l-3.04-3.04zM11.5 7a4.499 4.499 0 11-8.997 0A4.499 4.499 0 0111.5 7z"/></svg>
+    비상장사 리서치
+    <span class="tab-badge">AI</span>
+  </button>
+  <button class="tab-btn" id="tab-fdd" onclick="switchTab('fdd')">
+    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3.75 1.5a.25.25 0 00-.25.25v11.5c0 .138.112.25.25.25h8.5a.25.25 0 00.25-.25V6H9.75A1.75 1.75 0 018 4.25V1.5H3.75zm5.75.56v2.19c0 .138.112.25.25.25h2.19L9.5 2.06zM2 1.75C2 .784 2.784 0 3.75 0h5.086c.464 0 .909.184 1.237.513l3.414 3.414c.329.328.513.773.513 1.237v8.086A1.75 1.75 0 0112.25 15h-8.5A1.75 1.75 0 012 13.25V1.75z"/></svg>
+    재무실사 (FDD)
+    <span class="tab-badge" style="background:linear-gradient(135deg,#d29922,#f0883e)">NEW</span>
+  </button>
+</div>
+
+<!-- ── Main ──────────────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- ══ 탭 1: 관심 종목 ══════════════════════════════════════════════════ -->
+  <div id="page-watchlist">
+    <div class="add-bar">
+      <div class="add-bar-inner">
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <path d="M10.68 11.74a6 6 0 01-7.922-8.982 6 6 0 018.982 7.922l3.04 3.04a.749.749 0 11-1.06 1.06l-3.04-3.04zM11.5 7a4.499 4.499 0 11-8.997 0A4.499 4.499 0 0111.5 7z"/>
+        </svg>
+        <input
+          id="ticker-input"
+          type="text"
+          placeholder="티커 입력 (예: AAPL, 005930.KS)"
+          autocomplete="off"
+          spellcheck="false"
+        >
+      </div>
+      <button class="btn btn-primary" id="add-btn">
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <path d="M7.75 2a.75.75 0 01.75.75V7h4.25a.75.75 0 010 1.5H8.5v4.25a.75.75 0 01-1.5 0V8.5H2.75a.75.75 0 010-1.5H7V2.75A.75.75 0 017.75 2z"/>
+        </svg>
+        추가
+      </button>
+      <span class="add-hint">한국 주식: <strong>005930.KS</strong> (KOSPI) · <strong>035720.KQ</strong> (KOSDAQ)</span>
+    </div>
+    <div id="stocks-grid"></div>
+
+    <!-- ── AI 질문 패널 (관심 종목) ── -->
+    <div class="ai-panel" id="watchlist-ai-panel" style="max-width:900px">
+      <div class="ai-panel-header">
+        <span class="ai-panel-icon">🤖</span>
+        <div class="ai-panel-title">AI 애널리스트에게 질문하기</div>
+        <span class="ai-panel-badge">Claude Opus 4.6</span>
+      </div>
+      <div class="ai-panel-context">
+        <span class="ai-context-label">종목 컨텍스트:</span>
+        <select id="watchlist-ai-ticker-select" class="ai-context-select">
+          <option value="">전체 (선택 없음)</option>
+        </select>
+      </div>
+      <div class="ai-panel-input-row">
+        <textarea id="watchlist-ai-textarea" class="ai-textarea" rows="3"
+          placeholder="예: 포트폴리오에서 가장 유망한 종목은? AAPL의 AI 전략 분석해줘. 현재 매수 타이밍인가요?"></textarea>
+        <button class="btn btn-primary ai-submit-btn" id="watchlist-ai-btn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>
+          분석 요청
+        </button>
+      </div>
+      <div id="watchlist-ai-result" class="ai-result"></div>
+    </div>
+  </div>
+
+  <!-- ══ 탭 3: 재무실사 FDD ════════════════════════════════════════════════ -->
+  <div id="page-fdd" style="display:none">
+
+    <div class="fdd-layout">
+      <!-- 왼쪽: 업로드 패널 -->
+      <div class="fdd-upload-panel">
+        <div class="fdd-panel-title">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3.75 1.5a.25.25 0 00-.25.25v11.5c0 .138.112.25.25.25h8.5a.25.25 0 00.25-.25V6H9.75A1.75 1.75 0 018 4.25V1.5H3.75zm5.75.56v2.19c0 .138.112.25.25.25h2.19L9.5 2.06zM2 1.75C2 .784 2.784 0 3.75 0h5.086c.464 0 .909.184 1.237.513l3.414 3.414c.329.328.513.773.513 1.237v8.086A1.75 1.75 0 0112.25 15h-8.5A1.75 1.75 0 012 13.25V1.75z"/></svg>
+          재무실사 분석
+        </div>
+        <p class="fdd-panel-desc">재무제표 (PDF 또는 Excel)를 업로드하면<br>AI 3-Agent가 자동으로 재무실사를 수행합니다.</p>
+
+        <!-- 회사명 입력 -->
+        <div class="fdd-field">
+          <label class="fdd-label">회사명 (선택)</label>
+          <input id="fdd-company-input" type="text" class="fdd-input" placeholder="예: Lightmatter, 삼성바이오로직스">
+        </div>
+
+        <!-- 드래그앤드롭 영역 -->
+        <div class="fdd-dropzone" id="fdd-dropzone">
+          <div class="fdd-drop-icon">📄</div>
+          <div class="fdd-drop-text">파일을 드래그하거나 클릭하여 업로드</div>
+          <div class="fdd-drop-sub">PDF · Excel (.xlsx/.xls) · 최대 20MB</div>
+          <input type="file" id="fdd-file-input" accept=".pdf,.xlsx,.xls,.xlsm" style="display:none">
+        </div>
+
+        <!-- 선택된 파일 표시 -->
+        <div id="fdd-file-info" style="display:none" class="fdd-file-info">
+          <span id="fdd-file-name"></span>
+          <button class="fdd-file-remove" onclick="fddClearFile()">✕</button>
+        </div>
+
+        <button class="btn btn-primary fdd-submit-btn" id="fdd-submit-btn" onclick="runFDD()" disabled>
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>
+          재무실사 시작
+        </button>
+
+        <!-- Agent 진행 상태 -->
+        <div class="fdd-agents" id="fdd-agents" style="display:none">
+          <div class="agent-step" id="fdd-step1">
+            <div class="agent-icon">📑</div>
+            <div class="agent-info">
+              <div class="agent-name">Agent 1 · Document Parser</div>
+              <div class="agent-desc">재무제표 데이터 추출 중...</div>
+            </div>
+            <div class="agent-status" id="fdd-step1-status">⏳</div>
+          </div>
+          <div class="agent-connector"></div>
+          <div class="agent-step" id="fdd-step2">
+            <div class="agent-icon">📊</div>
+            <div class="agent-info">
+              <div class="agent-name">Agent 2 · Financial Analyst</div>
+              <div class="agent-desc">비율 계산 및 이상값 탐지 중...</div>
+            </div>
+            <div class="agent-status" id="fdd-step2-status">⏳</div>
+          </div>
+          <div class="agent-connector"></div>
+          <div class="agent-step" id="fdd-step3">
+            <div class="agent-icon">📝</div>
+            <div class="agent-info">
+              <div class="agent-name">Agent 3 · FDD Report Writer</div>
+              <div class="agent-desc">실사 리포트 작성 중...</div>
+            </div>
+            <div class="agent-status" id="fdd-step3-status">⏳</div>
+          </div>
+        </div>
+
+        <!-- 히스토리 -->
+        <div id="fdd-history" class="fdd-history"></div>
+      </div>
+
+      <!-- 오른쪽: 결과 영역 -->
+      <div class="fdd-result-panel">
+        <div id="fdd-result-placeholder" class="fdd-placeholder">
+          <div class="fdd-placeholder-icon">🔍</div>
+          <div class="fdd-placeholder-text">재무제표를 업로드하면<br>AI 실사 리포트가 여기에 표시됩니다</div>
+          <div class="fdd-placeholder-sub">
+            분석 항목: 수익성 · 재무상태 · 현금흐름<br>유동성 · 이상징후 · 투자 권고사항
+          </div>
+        </div>
+        <div id="fdd-result"></div>
+
+        <!-- ── AI 질문 패널 (재무실사) ── -->
+        <div class="ai-panel" id="fdd-ai-panel" style="display:none; margin-top:16px">
+          <div class="ai-panel-header">
+            <span class="ai-panel-icon">🤖</span>
+            <div class="ai-panel-title">AI 애널리스트에게 질문하기</div>
+            <span class="ai-panel-badge">Claude Opus 4.6</span>
+          </div>
+          <div class="ai-panel-context">
+            <span class="ai-context-label">재무실사 대상:</span>
+            <span class="ai-context-badge" id="fdd-ai-context-badge">—</span>
+          </div>
+          <div class="ai-panel-input-row">
+            <textarea id="fdd-ai-textarea" class="ai-textarea" rows="3"
+              placeholder="예: 이 회사의 가장 큰 재무 리스크는? 영업이익 마진 개선 가능성은? 부채 구조 평가해줘"></textarea>
+            <button class="btn btn-primary ai-submit-btn" id="fdd-ai-btn">
+              <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>
+              분석 요청
+            </button>
+          </div>
+          <div id="fdd-ai-result" class="ai-result"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 탭 2: 비상장사 리서치 ════════════════════════════════════════════ -->
+  <div id="page-research" style="display:none">
+
+    <!-- 검색 바 -->
+    <div class="research-search-bar">
+      <div class="research-input-wrap">
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <path d="M10.68 11.74a6 6 0 01-7.922-8.982 6 6 0 018.982 7.922l3.04 3.04a.749.749 0 11-1.06 1.06l-3.04-3.04zM11.5 7a4.499 4.499 0 11-8.997 0A4.499 4.499 0 0111.5 7z"/>
+        </svg>
+        <input
+          id="research-input"
+          type="text"
+          placeholder="비상장사 이름 입력 (예: Lightmatter, Groq, Databricks)"
+          autocomplete="off"
+          spellcheck="false"
+        >
+      </div>
+      <button class="btn btn-primary" id="research-btn">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/><path d="M9.573 4.427a.75.75 0 00-1.06 0L5.354 7.586a.75.75 0 000 1.06l3.159 3.159a.75.75 0 101.06-1.06L7.121 8.293l2.452-2.452a.75.75 0 000-1.06z"/></svg>
+        AI 리서치 시작
+      </button>
+    </div>
+
+    <!-- 검색 히스토리 -->
+    <div id="research-history-bar"></div>
+
+    <!-- 로딩 상태 -->
+    <div id="research-loading" style="display:none">
+      <div class="research-loading-inner">
+        <div class="research-spinner"></div>
+        <div class="research-loading-title">AI 리서치 진행 중...</div>
+        <div class="research-loading-steps">
+          <div class="loading-step active" id="step-search">🔍 웹 검색 중</div>
+          <div class="loading-step" id="step-analyze">🧠 Claude 분석 중</div>
+          <div class="loading-step" id="step-done">✅ 리포트 생성 완료</div>
+        </div>
+        <div class="research-loading-sub">최대 1~2분 소요됩니다</div>
+      </div>
+    </div>
+
+    <!-- 결과 영역 -->
+    <div id="research-result"></div>
+
+    <!-- ── AI 질문 패널 (비상장사 리서치) ── -->
+    <div class="ai-panel" id="research-ai-panel" style="max-width:900px; display:none">
+      <div class="ai-panel-header">
+        <span class="ai-panel-icon">🤖</span>
+        <div class="ai-panel-title">AI 애널리스트에게 질문하기</div>
+        <span class="ai-panel-badge">Claude Opus 4.6</span>
+      </div>
+      <div class="ai-panel-context">
+        <span class="ai-context-label">리서치 대상:</span>
+        <span class="ai-context-badge" id="research-ai-context-badge">—</span>
+      </div>
+      <div class="ai-panel-input-row">
+        <textarea id="research-ai-textarea" class="ai-textarea" rows="3"
+          placeholder="예: 이 회사의 핵심 경쟁 우위는? IPO 가능성을 분석해줘. 주요 리스크 요인은?"></textarea>
+        <button class="btn btn-primary ai-submit-btn" id="research-ai-btn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>
+          분석 요청
+        </button>
+      </div>
+      <div id="research-ai-result" class="ai-result"></div>
+    </div>
+
+  </div>
+
+</main>
+
+<div id="toast-container"></div>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
