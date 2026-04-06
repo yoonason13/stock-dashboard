@@ -3,17 +3,23 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 
-# Yahoo Finance IP 차단 우회용 세션 (클라우드 환경 필수)
-_yf_session = requests.Session()
-_yf_session.headers.update({
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-})
+# Yahoo Finance 차단 우회 — curl_cffi로 Chrome TLS 핑거프린트 완전 위장
+_yf_session = None
+try:
+    from curl_cffi import requests as curl_requests
+    _yf_session = curl_requests.Session(impersonate="chrome120")
+    print("[stock_service] curl_cffi 세션 사용 (Chrome 위장)")
+except ImportError:
+    # fallback: requests + User-Agent
+    _yf_session = requests.Session()
+    _yf_session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+    })
+    print("[stock_service] curl_cffi 없음 — requests 세션으로 대체")
 
 # pykrx는 한국 주식에만 사용
 try:
