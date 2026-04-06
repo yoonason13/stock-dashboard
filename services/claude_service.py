@@ -128,7 +128,6 @@ MA20: {f'{ma20:,.4f} {currency}' if ma20 else 'N/A'}
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=1500,
-            thinking={"type": "adaptive"},
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
             final_msg = stream.get_final_message()
@@ -164,24 +163,20 @@ def analyze_query(question: str, context: dict | None = None) -> dict:
     try:
         with client.messages.stream(
             model="claude-sonnet-4-6",
-            max_tokens=4000,
-            thinking={"type": "adaptive"},
+            max_tokens=2000,
             system=ANALYST_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_content}],
         ) as stream:
             final_msg = stream.get_final_message()
 
         answer = ""
-        thinking = ""
         for block in final_msg.content:
-            if block.type == "thinking":
-                thinking = block.thinking
-            elif block.type == "text":
+            if block.type == "text":
                 answer = block.text
 
         return {
             "answer": answer or "분석 결과를 가져올 수 없습니다.",
-            "thinking": thinking or None,
+            "thinking": None,
             "input_tokens": final_msg.usage.input_tokens,
             "output_tokens": final_msg.usage.output_tokens,
         }

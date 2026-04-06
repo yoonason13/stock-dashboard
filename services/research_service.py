@@ -133,7 +133,6 @@ def _generate_report(company_name: str, search_content: str) -> str:
     with _get_client().messages.stream(
         model="claude-sonnet-4-6",
         max_tokens=4000,
-        thinking={"type": "adaptive"},
         messages=[{"role": "user", "content": prompt}],
     ) as stream:
         final_msg = stream.get_final_message()

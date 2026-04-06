@@ -258,8 +258,7 @@ def _call_claude(system: str, prompt: str, max_tokens: int = 3000, use_thinking:
         system=system,
         messages=[{"role": "user", "content": prompt}],
     )
-    if use_thinking:
-        kwargs["thinking"] = {"type": "adaptive"}
+    # thinking 파라미터 제거 (adaptive는 유효하지 않은 값)
 
     with client.messages.stream(**kwargs) as stream:
         final_msg = stream.get_final_message()

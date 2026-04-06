@@ -326,7 +326,6 @@ Rules:
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=1500,
-            thinking={"type": "adaptive"},
             messages=[{"role": "user", "content": idea_prompt}],
         ) as stream:
             final_msg = stream.get_final_message()
