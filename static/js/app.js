@@ -845,15 +845,19 @@ function renderNewsSentimentResult(data) {
   const sentMap = {};
   (data.sentiment?.articles || []).forEach(a => { sentMap[a.index] = a; });
 
+  const label = data.display_name && data.display_name !== data.query
+    ? `${data.display_name} (${data.query})`
+    : data.query;
+
   container.innerHTML = [
-    renderNSNewsCard(data.news || [], sentMap, data.period_days),
+    renderNSNewsCard(data.news || [], sentMap, data.period_days, label),
     renderNSSentimentCard(data.sentiment || {}, data.news?.length || 0),
-    renderNSIdeaCard(data.investment_idea || {}, data.query, data.analyzed_at),
+    renderNSIdeaCard(data.investment_idea || {}, label, data.analyzed_at),
   ].join('');
 }
 
 /* ── Card 1: Recent News ─────────────────────────────────────────────────── */
-function renderNSNewsCard(news, sentMap, days) {
+function renderNSNewsCard(news, sentMap, days, label) {
   const items = news.map((a, i) => {
     const sa = sentMap[i + 1] || {};
     const sent = sa.sentiment || 'neutral';
@@ -878,7 +882,7 @@ function renderNSNewsCard(news, sentMap, days) {
       <div class="ns-card-header">
         <span class="ns-card-icon">📰</span>
         <span class="ns-card-title">Recent News</span>
-        <span class="ns-card-meta">최근 ${days}일 · ${news.length}건</span>
+        <span class="ns-card-meta">${label || ''} · 최근 ${days}일 · ${news.length}건</span>
       </div>
       <div class="ns-news-list">${items || '<div style="padding:16px 20px;color:var(--text-dim);font-size:.85rem">뉴스 없음</div>'}</div>
     </div>`;
