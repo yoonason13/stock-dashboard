@@ -1,6 +1,19 @@
 import yfinance as yf
 import pandas as pd
+import requests
 from datetime import datetime, timedelta
+
+# Yahoo Finance IP 차단 우회용 세션 (클라우드 환경 필수)
+_yf_session = requests.Session()
+_yf_session.headers.update({
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+})
 
 # pykrx는 한국 주식에만 사용
 try:
@@ -110,7 +123,7 @@ def _get_korean_stock_data(ticker: str) -> dict | None:
         sector = industry = ""
         news = []
         try:
-            yf_stock = yf.Ticker(ticker)
+            yf_stock = yf.Ticker(ticker, session=_yf_session)
             yf_info = yf_stock.info or {}
             revenue = yf_info.get("totalRevenue")
             operating_income = yf_info.get("operatingIncome") or yf_info.get("ebitda")
@@ -163,23 +176,47 @@ def _get_korean_stock_data(ticker: str) -> dict | None:
 
 def _get_us_stock_data(ticker: str) -> dict | None:
     try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
+        stock = yf.Ticker(ticker, session=_yf_session)
+
+        # history 조회 — 30d 실패 시 3mo로 재시도
+        hist = stock.history(period="30d")
+        if hist.empty:
+            hist = stock.history(period="3mo")
+        if hist.empty:
+            # 마지막 시도: yf.download 직접 호출
+            hist = yf.download(ticker, period="30d", progress=False, session=_yf_session)
+        if hist.empty:
+            print(f"[stock_service] {ticker} history 데이터 없음")
+            return None
+
+        info = {}
+        try:
+            info = stock.info or {}
+        except Exception as e:
+            print(f"[stock_service] {ticker} info 조회 실패, history/fast_info로 계속 진행: {e}")
+
+        fast_info = {}
+        try:
+            fast_info = dict(getattr(stock, "fast_info", {}) or {})
+        except Exception as e:
+            print(f"[stock_service] {ticker} fast_info 조회 실패: {e}")
 
         current_price = (
-            info.get("currentPrice")
+            fast_info.get("lastPrice")
+            or fast_info.get("regularMarketPrice")
+            or info.get("currentPrice")
             or info.get("regularMarketPrice")
             or info.get("navPrice")
         )
 
-        hist = stock.history(period="30d")
-        if hist.empty:
-            return None
-
         if current_price is None:
             current_price = float(hist["Close"].iloc[-1])
 
-        prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose")
+        prev_close = (
+            fast_info.get("previousClose")
+            or info.get("previousClose")
+            or info.get("regularMarketPreviousClose")
+        )
         if prev_close is None:
             prev_close = float(hist["Close"].iloc[-2]) if len(hist) > 1 else current_price
 
