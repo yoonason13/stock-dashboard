@@ -514,13 +514,27 @@ def daily_refresh_job():
     print("자동 갱신 완료.")
 
 
-if __name__ == "__main__":
-    scheduler = BackgroundScheduler(timezone="Asia/Seoul")
-    # 평일 오전 9시 자동 갱신
-    scheduler.add_job(daily_refresh_job, "cron", day_of_week="mon-fri", hour=9, minute=0)
-    scheduler.start()
+def _self_ping():
+    """Render 무료 플랜 cold start 방지 — 10분마다 self ping"""
+    try:
+        import requests as _req
+        port = os.environ.get("PORT", "8080")
+        _req.get(f"http://localhost:{port}/api/diag", timeout=10)
+    except Exception:
+        pass
 
+
+# gunicorn / 직접 실행 모두에서 스케줄러 시작
+import atexit as _atexit
+_scheduler = BackgroundScheduler(timezone="Asia/Seoul")
+_scheduler.add_job(daily_refresh_job, "cron", day_of_week="mon-fri", hour=9, minute=0)
+_scheduler.add_job(_self_ping, "interval", minutes=10)  # cold start 방지
+_scheduler.start()
+_atexit.register(lambda: _scheduler.shutdown(wait=False))
+
+
+if __name__ == "__main__":
     try:
         app.run(debug=False, port=5000, use_reloader=False)
     finally:
-        scheduler.shutdown()
+        _scheduler.shutdown()
