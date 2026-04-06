@@ -420,7 +420,7 @@ async function init() {
 
 /* ── Tab switching ───────────────────────────────────────────────────────── */
 function switchTab(tab) {
-  ['watchlist', 'research', 'fdd'].forEach(t => {
+  ['watchlist', 'research', 'fdd', 'news'].forEach(t => {
     const page = document.getElementById(`page-${t}`);
     const btn  = document.getElementById(`tab-${t}`);
     if (page) page.style.display = t === tab ? '' : 'none';
@@ -777,6 +777,221 @@ function renderReportMarkdown(text) {
 }
 
 /* ══════════════════════════════════════════════════════════════
+   News Sentiment & Investment Idea
+══════════════════════════════════════════════════════════════ */
+
+let _nsPeriod = 7;
+
+function nsSetPeriod(days) {
+  _nsPeriod = days;
+  document.getElementById('ns-period-7').classList.toggle('active', days === 7);
+  document.getElementById('ns-period-30').classList.toggle('active', days === 30);
+}
+
+function nsSetAgentStep(n, state) {
+  const el = document.getElementById(`ns-step${n}`);
+  const statusEl = document.getElementById(`ns-step${n}-status`);
+  if (!el || !statusEl) return;
+  el.className = `agent-step ${state}`;
+  statusEl.textContent = state === 'done' ? '✅' : state === 'active' ? '⚙️' : state === 'error' ? '❌' : '⏳';
+}
+
+async function runNewsSentiment() {
+  const query = document.getElementById('ns-input').value.trim();
+  if (!query) { toast('종목명 또는 티커를 입력해주세요', 'error'); return; }
+
+  const btn = document.getElementById('ns-btn');
+  btn.disabled = true;
+  btn.textContent = '분석 중...';
+  setLoadingBar(10);
+
+  // Agent 진행 UI 표시
+  const agentsEl = document.getElementById('ns-agents');
+  agentsEl.style.display = '';
+  nsSetAgentStep(1, 'active');
+  nsSetAgentStep(2, 'waiting');
+  nsSetAgentStep(3, 'waiting');
+  document.getElementById('ns-result').innerHTML = '';
+
+  // 스텝 타이머 시뮬레이션
+  const t1 = setTimeout(() => nsSetAgentStep(2, 'active'), 8000);
+  const t2 = setTimeout(() => nsSetAgentStep(3, 'active'), 20000);
+
+  try {
+    const result = await api('POST', '/api/news-sentiment', { query, days: _nsPeriod });
+    clearTimeout(t1); clearTimeout(t2);
+    nsSetAgentStep(1, 'done');
+    nsSetAgentStep(2, 'done');
+    nsSetAgentStep(3, 'done');
+    setLoadingBar(100);
+    renderNewsSentimentResult(result);
+    toast(`${query} 뉴스 분석 완료`, 'success');
+  } catch (e) {
+    clearTimeout(t1); clearTimeout(t2);
+    nsSetAgentStep(1, 'error');
+    setLoadingBar(0);
+    toast('분석 실패: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Analyze News Flow';
+  }
+}
+
+/* ── Render 3 cards ──────────────────────────────────────────────────────── */
+function renderNewsSentimentResult(data) {
+  const container = document.getElementById('ns-result');
+
+  // sentiment article map
+  const sentMap = {};
+  (data.sentiment?.articles || []).forEach(a => { sentMap[a.index] = a; });
+
+  container.innerHTML = [
+    renderNSNewsCard(data.news || [], sentMap, data.period_days),
+    renderNSSentimentCard(data.sentiment || {}, data.news?.length || 0),
+    renderNSIdeaCard(data.investment_idea || {}, data.query, data.analyzed_at),
+  ].join('');
+}
+
+/* ── Card 1: Recent News ─────────────────────────────────────────────────── */
+function renderNSNewsCard(news, sentMap, days) {
+  const items = news.map((a, i) => {
+    const sa = sentMap[i + 1] || {};
+    const sent = sa.sentiment || 'neutral';
+    const badgeClass = `ns-badge-${sent}`;
+    const badgeLabel = sent === 'positive' ? '긍정' : sent === 'negative' ? '부정' : '중립';
+    return `
+      <div class="ns-news-item">
+        <span class="ns-news-badge ${badgeClass}">${badgeLabel}</span>
+        <div class="ns-news-body">
+          <a class="ns-news-title" href="${a.url || '#'}" target="_blank" rel="noopener" title="${a.title}">${a.title}</a>
+          ${sa.reason ? `<div class="ns-news-reason">${sa.reason}</div>` : ''}
+        </div>
+        <div class="ns-news-right">
+          <div class="ns-news-date">${a.date || ''}</div>
+          <div class="ns-news-source">${a.source || ''}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="ns-card">
+      <div class="ns-card-header">
+        <span class="ns-card-icon">📰</span>
+        <span class="ns-card-title">Recent News</span>
+        <span class="ns-card-meta">최근 ${days}일 · ${news.length}건</span>
+      </div>
+      <div class="ns-news-list">${items || '<div style="padding:16px 20px;color:var(--text-dim);font-size:.85rem">뉴스 없음</div>'}</div>
+    </div>`;
+}
+
+/* ── Card 2: Sentiment Summary ───────────────────────────────────────────── */
+function renderNSSentimentCard(s, total) {
+  const overall = s.overall_sentiment || 'neutral';
+  const pos = s.positive_count || 0;
+  const neu = s.neutral_count  || 0;
+  const neg = s.negative_count || 0;
+  const safeTotal = total || (pos + neu + neg) || 1;
+
+  const overallLabel = overall === 'positive' ? '긍정적 POSITIVE' :
+                       overall === 'negative' ? '부정적 NEGATIVE' : '중립 NEUTRAL';
+  const overallClass = `ns-overall-${overall}`;
+
+  const themes = (s.key_themes || []).map(t =>
+    `<span class="ns-theme-chip">${t}</span>`).join('');
+
+  const reasons = (s.main_reasons || []).map(r =>
+    `<li>${r}</li>`).join('');
+
+  return `
+    <div class="ns-card">
+      <div class="ns-card-header">
+        <span class="ns-card-icon">📊</span>
+        <span class="ns-card-title">Sentiment Summary</span>
+        <span class="ns-card-meta">Agent 2 분석</span>
+      </div>
+      <div class="ns-sentiment-body">
+        <div class="ns-overall-row">
+          <div class="ns-overall-badge ${overallClass}">${overallLabel}</div>
+          <div class="ns-count-chips">
+            <span class="ns-count-chip ns-chip-pos">▲ 긍정 ${pos}</span>
+            <span class="ns-count-chip ns-chip-neu">— 중립 ${neu}</span>
+            <span class="ns-count-chip ns-chip-neg">▼ 부정 ${neg}</span>
+          </div>
+        </div>
+        <div class="ns-bar-section">
+          ${[
+            { label: '긍정', count: pos, cls: 'pos' },
+            { label: '중립', count: neu, cls: 'neu' },
+            { label: '부정', count: neg, cls: 'neg' },
+          ].map(b => `
+            <div class="ns-bar-row">
+              <span class="ns-bar-label">${b.label}</span>
+              <div class="ns-bar-track">
+                <div class="ns-bar-fill ns-bar-fill-${b.cls}" style="width:${Math.round(b.count/safeTotal*100)}%"></div>
+              </div>
+              <span class="ns-bar-count">${b.count}</span>
+            </div>`).join('')}
+        </div>
+        ${themes ? `
+        <div class="ns-themes-section">
+          <div class="ns-section-label">주요 테마</div>
+          <div class="ns-theme-chips">${themes}</div>
+        </div>` : ''}
+        ${reasons ? `
+        <div>
+          <div class="ns-section-label">주요 이유</div>
+          <ul class="ns-reasons-list">${reasons}</ul>
+        </div>` : ''}
+      </div>
+    </div>`;
+}
+
+/* ── Card 3: Investment Idea ─────────────────────────────────────────────── */
+function renderNSIdeaCard(idea, query, analyzedAt) {
+  const rec = idea.recommendation || '중립 관망';
+  const recClass = rec === '매수 검토' ? 'ns-rec-buy' :
+                   rec === '리스크 주의' ? 'ns-rec-risk' : 'ns-rec-neutral';
+
+  const bullHtml = (idea.bullish_points || []).map(p =>
+    `<div class="ns-idea-point">${p}</div>`).join('');
+  const bearHtml = (idea.bearish_points || []).map(p =>
+    `<div class="ns-idea-point">${p}</div>`).join('');
+  const watchHtml = (idea.watch_items || []).map(w =>
+    `<span class="ns-watch-item">${w}</span>`).join('');
+
+  return `
+    <div class="ns-card">
+      <div class="ns-card-header">
+        <span class="ns-card-icon">💡</span>
+        <span class="ns-card-title">Investment Idea</span>
+        <span class="ns-card-meta">Agent 3 · ${fmtDate(analyzedAt)}</span>
+      </div>
+      <div class="ns-idea-body">
+        <div class="ns-rec-row">
+          <span class="ns-rec-badge ${recClass}">${rec}</span>
+          <span class="ns-rec-label">⚠️ 본 내용은 참고용이며 투자 권유가 아닙니다</span>
+        </div>
+        <div class="ns-conclusion">${idea.core_conclusion || ''}</div>
+        <div class="ns-idea-grid">
+          <div class="ns-idea-col ns-idea-col-bull">
+            <div class="ns-idea-col-title">Bullish Points</div>
+            ${bullHtml || '<div class="ns-idea-point">없음</div>'}
+          </div>
+          <div class="ns-idea-col ns-idea-col-bear">
+            <div class="ns-idea-col-title">Bearish Points</div>
+            ${bearHtml || '<div class="ns-idea-point">없음</div>'}
+          </div>
+        </div>
+        ${watchHtml ? `
+        <div class="ns-watch-section">
+          <div class="ns-section-label" style="color:var(--yellow)">Watch Items</div>
+          <div class="ns-watch-items">${watchHtml}</div>
+        </div>` : ''}
+      </div>
+    </div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════
    AI Analyst Panel
 ══════════════════════════════════════════════════════════════ */
 
@@ -909,6 +1124,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('research-btn').addEventListener('click', () => researchCompany());
 
   fddInitDropzone();
+
+  // News Sentiment 이벤트
+  document.getElementById('ns-btn').addEventListener('click', runNewsSentiment);
+  document.getElementById('ns-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runNewsSentiment();
+  });
 
   // AI 질문 패널 이벤트
   document.getElementById('watchlist-ai-btn').addEventListener('click', () => submitAnalyzeQuery('watchlist'));

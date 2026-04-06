@@ -15,6 +15,8 @@ app = Flask(__name__)
 
 WATCHLIST_FILE = os.path.join("data", "watchlist.json")
 CACHE_DIR = os.path.join("data", "cache")
+RESEARCH_CACHE_DIR = os.path.join("data", "research_cache")
+RESEARCH_HISTORY_FILE = os.path.join("data", "research_history.json")
 
 
 # ── 파일 헬퍼 ────────────────────────────────────────────────────────────────
@@ -51,6 +53,40 @@ def delete_cache(ticker: str) -> None:
     path = os.path.join(CACHE_DIR, f"{ticker}.json")
     if os.path.exists(path):
         os.remove(path)
+
+
+# ── 리서치 캐시 헬퍼 ─────────────────────────────────────────────────────────
+
+def _safe_filename(name: str) -> str:
+    return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in name)
+
+
+def load_research_cache(company: str) -> dict | None:
+    path = os.path.join(RESEARCH_CACHE_DIR, f"{_safe_filename(company)}.json")
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_research_cache(company: str, data: dict) -> None:
+    os.makedirs(RESEARCH_CACHE_DIR, exist_ok=True)
+    path = os.path.join(RESEARCH_CACHE_DIR, f"{_safe_filename(company)}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def load_research_history() -> list[dict]:
+    if not os.path.exists(RESEARCH_HISTORY_FILE):
+        return []
+    with open(RESEARCH_HISTORY_FILE, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_research_history(history: list[dict]) -> None:
+    os.makedirs("data", exist_ok=True)
+    with open(RESEARCH_HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
 
 
 def build_full_data(ticker: str) -> dict | None:
@@ -128,6 +164,195 @@ def refresh_one(ticker: str):
     if not data:
         return jsonify({"error": f"{ticker} 데이터 갱신 실패"}), 500
     return jsonify({"ticker": ticker, "data": data})
+
+
+# ── /analyze 엔드포인트 ──────────────────────────────────────────────────────
+
+@app.route("/api/analyze", methods=["POST"])
+def analyze():
+    """
+    범용 Claude 분석 에이전트 엔드포인트.
+
+    Request body (JSON):
+        question  (str, required) : 분석 질문
+        context   (dict, optional): 추가 컨텍스트 (ticker, price 등)
+
+    Response (JSON):
+        answer        (str)      : Claude 분석 답변
+        thinking      (str|null) : 내부 추론 과정 (adaptive thinking)
+        input_tokens  (int)      : 소비된 입력 토큰 수
+        output_tokens (int)      : 소비된 출력 토큰 수
+    """
+    body = request.get_json(silent=True) or {}
+    question = body.get("question", "").strip()
+    context = body.get("context") or None
+
+    if not question:
+        return jsonify({"error": "question 필드가 필요합니다."}), 400
+    if len(question) > 4000:
+        return jsonify({"error": "질문이 너무 깁니다 (최대 4000자)."}), 400
+
+    from services.claude_service import analyze_query
+    result = analyze_query(question, context)
+    return jsonify(result)
+
+
+# ── FDD 라우트 ───────────────────────────────────────────────────────────────
+
+FDD_CACHE_DIR = os.path.join("data", "fdd_cache")
+
+ALLOWED_EXTENSIONS = {"pdf", "xlsx", "xls", "xlsm"}
+MAX_FILE_MB = 20
+
+
+def _allowed_file(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[-1].lower() in ALLOWED_EXTENSIONS
+
+
+@app.route("/api/fdd/upload", methods=["POST"])
+def fdd_upload():
+    if "file" not in request.files:
+        return jsonify({"error": "파일이 없습니다."}), 400
+
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"error": "파일명이 없습니다."}), 400
+    if not _allowed_file(f.filename):
+        return jsonify({"error": "PDF, Excel(.xlsx/.xls) 파일만 업로드 가능합니다."}), 400
+
+    file_bytes = f.read()
+    if len(file_bytes) > MAX_FILE_MB * 1024 * 1024:
+        return jsonify({"error": f"파일 크기가 {MAX_FILE_MB}MB를 초과합니다."}), 400
+
+    company_name = request.form.get("company_name", "").strip()
+
+    from services.fdd_service import run_fdd
+    result = run_fdd(file_bytes, f.filename, company_name)
+
+    if "error" in result:
+        return jsonify(result), 400
+
+    result["analyzed_at"] = datetime.now().isoformat()
+
+    # 캐시 저장
+    os.makedirs(FDD_CACHE_DIR, exist_ok=True)
+    safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in (company_name or f.filename))
+    cache_path = os.path.join(FDD_CACHE_DIR, f"{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+    import json as _json
+    with open(cache_path, "w", encoding="utf-8") as fp:
+        _json.dump(result, fp, ensure_ascii=False, indent=2)
+
+    return jsonify(result)
+
+
+@app.route("/api/fdd/history", methods=["GET"])
+def fdd_history():
+    import json as _json
+    if not os.path.exists(FDD_CACHE_DIR):
+        return jsonify([])
+    files = sorted(
+        [f for f in os.listdir(FDD_CACHE_DIR) if f.endswith(".json")],
+        reverse=True
+    )[:10]
+    history = []
+    for fname in files:
+        try:
+            with open(os.path.join(FDD_CACHE_DIR, fname), encoding="utf-8") as fp:
+                d = _json.load(fp)
+                history.append({
+                    "company_name": d.get("company_name", fname),
+                    "filename": d.get("filename", ""),
+                    "analyzed_at": d.get("analyzed_at", ""),
+                    "cache_file": fname,
+                })
+        except Exception:
+            pass
+    return jsonify(history)
+
+
+@app.route("/api/fdd/cache/<cache_file>", methods=["GET"])
+def fdd_get_cache(cache_file: str):
+    import json as _json
+    # 경로 traversal 방지
+    safe = os.path.basename(cache_file)
+    path = os.path.join(FDD_CACHE_DIR, safe)
+    if not os.path.exists(path):
+        return jsonify({"error": "캐시 없음"}), 404
+    with open(path, encoding="utf-8") as fp:
+        return jsonify(_json.load(fp))
+
+
+# ── 비상장사 리서치 라우트 ───────────────────────────────────────────────────
+
+@app.route("/api/research", methods=["POST"])
+def research_company():
+    body = request.get_json(silent=True) or {}
+    company_name = body.get("company", "").strip()
+    force_refresh = body.get("refresh", False)
+
+    if not company_name:
+        return jsonify({"error": "회사명을 입력해주세요."}), 400
+
+    # 24시간 캐시 확인
+    if not force_refresh:
+        cached = load_research_cache(company_name)
+        if cached:
+            try:
+                cached_at = datetime.fromisoformat(cached.get("researched_at", "2000-01-01"))
+                if (datetime.now() - cached_at).total_seconds() < 86400:
+                    return jsonify(cached)
+            except Exception:
+                pass
+
+    from services.research_service import research_private_company
+    result = research_private_company(company_name)
+    if not result:
+        return jsonify({"error": f"'{company_name}' 리서치에 실패했습니다."}), 500
+
+    result["researched_at"] = datetime.now().isoformat()
+    save_research_cache(company_name, result)
+
+    # 검색 히스토리 업데이트
+    history = load_research_history()
+    history = [h for h in history if h.get("company") != company_name]
+    history.insert(0, {"company": company_name, "researched_at": result["researched_at"]})
+    save_research_history(history[:20])
+
+    return jsonify(result)
+
+
+@app.route("/api/research/history", methods=["GET"])
+def get_research_history():
+    return jsonify(load_research_history())
+
+
+@app.route("/api/research/<path:company_name>", methods=["GET"])
+def get_research_cached(company_name: str):
+    cached = load_research_cache(company_name)
+    if not cached:
+        return jsonify({"error": "캐시된 리서치 없음"}), 404
+    return jsonify(cached)
+
+
+# ── 뉴스 감성 분석 라우트 ─────────────────────────────────────────────────────
+
+@app.route("/api/news-sentiment", methods=["POST"])
+def news_sentiment():
+    body = request.get_json(silent=True) or {}
+    query = body.get("query", "").strip()
+    days  = int(body.get("days", 7))
+
+    if not query:
+        return jsonify({"error": "종목명 또는 티커를 입력해주세요."}), 400
+    if days not in (7, 30):
+        days = 7
+
+    from services.news_sentiment_service import run_news_sentiment
+    result = run_news_sentiment(query, days)
+
+    if "error" in result:
+        return jsonify(result), 400
+    return jsonify(result)
 
 
 # ── 스케줄러 ─────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>주식 대시보드 — AI 분석</title>
+  <title>AI 기반 투자 리서치 플랫폼</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -18,7 +18,7 @@
       <svg viewBox="0 0 16 16" fill="currentColor">
         <path d="M1.5 2.75A.75.75 0 012.25 2h11.5a.75.75 0 010 1.5H2.25a.75.75 0 01-.75-.75zm0 5A.75.75 0 012.25 7h11.5a.75.75 0 010 1.5H2.25A.75.75 0 011.5 7.75zm.75 4.75a.75.75 0 000 1.5h7.5a.75.75 0 000-1.5h-7.5z"/>
       </svg>
-      주식 AI 대시보드
+      AI 기반 투자 리서치 플랫폼
     </div>
     <span class="header-subtitle">Claude AI 분석 · 자동 갱신</span>
   </div>
@@ -46,8 +46,12 @@
   </button>
   <button class="tab-btn" id="tab-fdd" onclick="switchTab('fdd')">
     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3.75 1.5a.25.25 0 00-.25.25v11.5c0 .138.112.25.25.25h8.5a.25.25 0 00.25-.25V6H9.75A1.75 1.75 0 018 4.25V1.5H3.75zm5.75.56v2.19c0 .138.112.25.25.25h2.19L9.5 2.06zM2 1.75C2 .784 2.784 0 3.75 0h5.086c.464 0 .909.184 1.237.513l3.414 3.414c.329.328.513.773.513 1.237v8.086A1.75 1.75 0 0112.25 15h-8.5A1.75 1.75 0 012 13.25V1.75z"/></svg>
-    재무실사 (FDD)
-    <span class="tab-badge" style="background:linear-gradient(135deg,#d29922,#f0883e)">NEW</span>
+    재무실사
+  </button>
+  <button class="tab-btn" id="tab-news" onclick="switchTab('news')">
+    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 2.75A2.75 2.75 0 012.75 0h10.5A2.75 2.75 0 0116 2.75v10.5A2.75 2.75 0 0113.25 16H2.75A2.75 2.75 0 010 13.25zm2.75-1.25c-.69 0-1.25.56-1.25 1.25v10.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25V2.75c0-.69-.56-1.25-1.25-1.25zM3.75 4h8.5a.75.75 0 010 1.5h-8.5a.75.75 0 010-1.5zm0 3h8.5a.75.75 0 010 1.5h-8.5a.75.75 0 010-1.5zm0 3h5a.75.75 0 010 1.5h-5a.75.75 0 010-1.5z"/></svg>
+    News Sentiment
+    <span class="tab-badge" style="background:linear-gradient(135deg,#3fb950,#58a6ff)">AI</span>
   </button>
 </div>
 
@@ -275,6 +279,68 @@
       </div>
       <div id="research-ai-result" class="ai-result"></div>
     </div>
+
+  </div>
+
+  <!-- ══ 탭 4: News Sentiment & Investment Idea ═══════════════════════════ -->
+  <div id="page-news" style="display:none">
+
+    <!-- 검색 바 -->
+    <div class="ns-search-bar">
+      <div class="ns-input-wrap">
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <path d="M10.68 11.74a6 6 0 01-7.922-8.982 6 6 0 018.982 7.922l3.04 3.04a.749.749 0 11-1.06 1.06l-3.04-3.04zM11.5 7a4.499 4.499 0 11-8.997 0A4.499 4.499 0 0111.5 7z"/>
+        </svg>
+        <input
+          id="ns-input"
+          type="text"
+          placeholder="종목명 또는 티커 입력 (예: AAPL, 삼성전자, 005930.KS)"
+          autocomplete="off"
+          spellcheck="false"
+        >
+      </div>
+      <div class="ns-period-toggle">
+        <button class="ns-period-btn active" id="ns-period-7" onclick="nsSetPeriod(7)">7일</button>
+        <button class="ns-period-btn" id="ns-period-30" onclick="nsSetPeriod(30)">30일</button>
+      </div>
+      <button class="btn btn-primary" id="ns-btn">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>
+        Analyze News Flow
+      </button>
+    </div>
+
+    <!-- Agent 진행 상태 -->
+    <div class="fdd-agents" id="ns-agents" style="display:none; max-width:600px; margin-bottom:20px">
+      <div class="agent-step" id="ns-step1">
+        <div class="agent-icon">📡</div>
+        <div class="agent-info">
+          <div class="agent-name">Agent 1 · News Fetcher</div>
+          <div class="agent-desc">최신 뉴스 수집 중...</div>
+        </div>
+        <div class="agent-status" id="ns-step1-status">⏳</div>
+      </div>
+      <div class="agent-connector"></div>
+      <div class="agent-step" id="ns-step2">
+        <div class="agent-icon">🧠</div>
+        <div class="agent-info">
+          <div class="agent-name">Agent 2 · Sentiment Analyst</div>
+          <div class="agent-desc">기사별 감성 분류 중...</div>
+        </div>
+        <div class="agent-status" id="ns-step2-status">⏳</div>
+      </div>
+      <div class="agent-connector"></div>
+      <div class="agent-step" id="ns-step3">
+        <div class="agent-icon">💡</div>
+        <div class="agent-info">
+          <div class="agent-name">Agent 3 · Idea Generator</div>
+          <div class="agent-desc">투자 아이디어 작성 중...</div>
+        </div>
+        <div class="agent-status" id="ns-step3-status">⏳</div>
+      </div>
+    </div>
+
+    <!-- 결과 영역 -->
+    <div id="ns-result"></div>
 
   </div>
 
