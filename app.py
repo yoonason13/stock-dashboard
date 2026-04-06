@@ -239,7 +239,7 @@ def diag():
         import anthropic
         c = anthropic.Anthropic(api_key=api_key)
         msg = c.messages.create(
-            model="claude-3-5-haiku-20241022",
+            model="claude-sonnet-4-6",
             max_tokens=10,
             messages=[{"role": "user", "content": "Say OK"}],
         )
@@ -264,7 +264,7 @@ def diag():
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
-            json={"model": "claude-3-5-haiku-20241022", "max_tokens": 10,
+            json={"model": "claude-sonnet-4-6", "max_tokens": 10,
                   "messages": [{"role": "user", "content": "Say OK"}]},
             timeout=30,
         )
