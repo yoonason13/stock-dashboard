@@ -2,12 +2,24 @@ import sys
 import io
 import json
 import os
+import locale
 import builtins
+import traceback
 from datetime import datetime
 
 # ── UTF-8 전역 패치 (Render ASCII 환경 완전 우회) ────────────────────────────
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["PYTHONUTF8"] = "1"
+os.environ["LANG"] = "C.UTF-8"
+os.environ["LC_ALL"] = "C.UTF-8"
+
+# locale 강제 설정
+for _lc in ("C.UTF-8", "en_US.UTF-8", "C"):
+    try:
+        locale.setlocale(locale.LC_ALL, _lc)
+        break
+    except Exception:
+        pass
 
 # stdout/stderr 재설정
 for _s in (sys.stdout, sys.stderr):
@@ -209,13 +221,13 @@ def diag():
         import anthropic
         c = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
         msg = c.messages.create(
-            model="claude-haiku-4-5",
+            model="claude-3-5-haiku-20241022",
             max_tokens=10,
-            messages=[{"role": "user", "content": "hi"}],
+            messages=[{"role": "user", "content": "Say OK"}],
         )
-        results["anthropic"] = "ok"
+        results["anthropic"] = "ok: " + (msg.content[0].text if msg.content else "no content")
     except Exception as e:
-        results["anthropic"] = f"error: {str(e)[:200]}"
+        results["anthropic"] = "error: " + traceback.format_exc()[-500:]
 
     # 2. Tavily API 테스트
     try:
@@ -235,6 +247,11 @@ def diag():
     results["stdout_encoding"] = getattr(sys.stdout, "encoding", "unknown")
     results["PYTHONUTF8"] = os.environ.get("PYTHONUTF8", "not set")
     results["PYTHONIOENCODING"] = os.environ.get("PYTHONIOENCODING", "not set")
+    results["LANG"] = os.environ.get("LANG", "not set")
+    results["LC_ALL"] = os.environ.get("LC_ALL", "not set")
+    results["locale_preferred"] = locale.getpreferredencoding(False)
+    results["fs_encoding"] = sys.getfilesystemencoding()
+    results["default_encoding"] = sys.getdefaultencoding()
 
     return jsonify(results)
 
