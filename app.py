@@ -216,10 +216,28 @@ def diag():
     """API 키 및 외부 서비스 연결 진단"""
     results = {}
 
-    # 1. Anthropic API 테스트
+    # 0. API 키 앞 10자 확인 (진단용)
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    results["api_key_preview"] = repr(api_key[:15]) if api_key else "NOT SET"
+
+    # 1. 어느 헤더가 한글인지 찾기
+    bad_header_values = []
+    try:
+        import httpx._models as _hm
+        _orig_norm = _hm._normalize_header_value
+        def _debug_norm(value, encoding=None):
+            try:
+                return _orig_norm(value, encoding)
+            except UnicodeEncodeError:
+                bad_header_values.append(repr(value[:80]))
+                raise
+        _hm._normalize_header_value = _debug_norm
+    except Exception as patch_err:
+        results["patch_err"] = str(patch_err)
+
     try:
         import anthropic
-        c = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        c = anthropic.Anthropic(api_key=api_key)
         msg = c.messages.create(
             model="claude-3-5-haiku-20241022",
             max_tokens=10,
@@ -227,7 +245,32 @@ def diag():
         )
         results["anthropic"] = "ok: " + (msg.content[0].text if msg.content else "no content")
     except Exception as e:
-        results["anthropic"] = "error: " + traceback.format_exc()[-500:]
+        results["anthropic"] = "error: " + traceback.format_exc()[-300:]
+        results["bad_header"] = bad_header_values  # 문제 헤더 값
+    finally:
+        try:
+            import httpx._models as _hm2
+            _hm2._normalize_header_value = _orig_norm
+        except Exception:
+            pass
+
+    # 1b. requests로 직접 호출 테스트 (httpx 우회)
+    try:
+        import requests as req
+        raw = req.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={"model": "claude-3-5-haiku-20241022", "max_tokens": 10,
+                  "messages": [{"role": "user", "content": "Say OK"}]},
+            timeout=30,
+        )
+        results["anthropic_raw_requests"] = f"status={raw.status_code} body={raw.text[:150]}"
+    except Exception as e:
+        results["anthropic_raw_requests"] = f"error: {e}"
 
     # 2. Tavily API 테스트
     try:
