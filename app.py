@@ -166,6 +166,45 @@ def refresh_one(ticker: str):
     return jsonify({"ticker": ticker, "data": data})
 
 
+# ── 진단 엔드포인트 ──────────────────────────────────────────────────────────
+
+@app.route("/api/diag", methods=["GET"])
+def diag():
+    """API 키 및 외부 서비스 연결 진단"""
+    results = {}
+
+    # 1. Anthropic API 테스트
+    try:
+        import anthropic
+        c = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        msg = c.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "hi"}],
+        )
+        results["anthropic"] = "ok"
+    except Exception as e:
+        results["anthropic"] = f"error: {str(e)[:200]}"
+
+    # 2. Tavily API 테스트
+    try:
+        import requests as req
+        r = req.post(
+            "https://api.tavily.com/search",
+            json={"api_key": os.environ.get("TAVILY_API_KEY", ""), "query": "test", "max_results": 1},
+            timeout=10,
+        )
+        results["tavily"] = f"ok (status {r.status_code})" if r.status_code == 200 else f"error {r.status_code}: {r.text[:200]}"
+    except Exception as e:
+        results["tavily"] = f"error: {str(e)[:200]}"
+
+    # 3. 환경변수 존재 여부
+    results["ANTHROPIC_API_KEY_set"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    results["TAVILY_API_KEY_set"] = bool(os.environ.get("TAVILY_API_KEY"))
+
+    return jsonify(results)
+
+
 # ── /analyze 엔드포인트 ──────────────────────────────────────────────────────
 
 @app.route("/api/analyze", methods=["POST"])
