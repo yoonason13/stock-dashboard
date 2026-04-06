@@ -2,8 +2,15 @@ import os
 import requests
 from anthropic import Anthropic
 
-client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+_client = None
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
+
+
+def _get_client() -> Anthropic:
+    global _client
+    if _client is None:
+        _client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    return _client
 
 
 def research_private_company(company_name: str) -> dict | None:
@@ -22,13 +29,11 @@ def research_private_company(company_name: str) -> dict | None:
 
 
 def _multi_search(company_name: str) -> dict:
-    """Tavily API로 여러 쿼리를 병렬 검색"""
+    """Tavily API로 핵심 쿼리 3개 검색 (속도 최적화)"""
     queries = [
-        f"{company_name} company overview mission founders technology",
-        f"{company_name} funding rounds series valuation investors",
-        f"{company_name} revenue ARR financials growth metrics 2024 2025",
-        f"{company_name} news announcement latest 2025",
-        f"{company_name} competitors market industry landscape",
+        f"{company_name} company overview funding valuation investors",
+        f"{company_name} revenue financials business model 2024 2025",
+        f"{company_name} news latest announcement competitors",
     ]
 
     all_content = []
@@ -42,12 +47,12 @@ def _multi_search(company_name: str) -> dict:
                 json={
                     "api_key": TAVILY_API_KEY,
                     "query": query,
-                    "search_depth": "advanced",
+                    "search_depth": "basic",
                     "max_results": 5,
                     "include_raw_content": False,
                     "include_answer": True,
                 },
-                timeout=20,
+                timeout=15,
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -125,7 +130,7 @@ def _generate_report(company_name: str, search_content: str) -> str:
 - 주요 리스크 요인
 - 투자 관점 종합 의견 (1~2줄)"""
 
-    with client.messages.stream(
+    with _get_client().messages.stream(
         model="claude-sonnet-4-6",
         max_tokens=4000,
         thinking={"type": "adaptive"},
