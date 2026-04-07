@@ -516,7 +516,11 @@ async function runFDD() {
 
     setLoadingBar(20);
     const res = await fetch('/api/fdd/upload', { method: 'POST', body: formData });
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch {
+      throw new Error(`서버 응답 오류 (HTTP ${res.status}). 잠시 후 다시 시도해주세요.`);
+    }
     clearTimeout(stepTimer); clearTimeout(stepTimer2);
 
     if (!res.ok) { throw new Error(data.error || `HTTP ${res.status}`); }

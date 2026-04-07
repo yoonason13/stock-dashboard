@@ -353,38 +353,47 @@ def _allowed_file(filename: str) -> bool:
 
 @app.route("/api/fdd/upload", methods=["POST"])
 def fdd_upload():
-    if "file" not in request.files:
-        return jsonify({"error": "파일이 없습니다."}), 400
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "파일이 없습니다."}), 400
 
-    f = request.files["file"]
-    if not f.filename:
-        return jsonify({"error": "파일명이 없습니다."}), 400
-    if not _allowed_file(f.filename):
-        return jsonify({"error": "PDF, Excel(.xlsx/.xls) 파일만 업로드 가능합니다."}), 400
+        f = request.files["file"]
+        if not f.filename:
+            return jsonify({"error": "파일명이 없습니다."}), 400
+        if not _allowed_file(f.filename):
+            return jsonify({"error": "PDF, Excel(.xlsx/.xls) 파일만 업로드 가능합니다."}), 400
 
-    file_bytes = f.read()
-    if len(file_bytes) > MAX_FILE_MB * 1024 * 1024:
-        return jsonify({"error": f"파일 크기가 {MAX_FILE_MB}MB를 초과합니다."}), 400
+        file_bytes = f.read()
+        if len(file_bytes) > MAX_FILE_MB * 1024 * 1024:
+            return jsonify({"error": f"파일 크기가 {MAX_FILE_MB}MB를 초과합니다."}), 400
 
-    company_name = request.form.get("company_name", "").strip()
+        company_name = request.form.get("company_name", "").strip()
 
-    from services.fdd_service import run_fdd
-    result = run_fdd(file_bytes, f.filename, company_name)
+        from services.fdd_service import run_fdd
+        result = run_fdd(file_bytes, f.filename, company_name)
 
-    if "error" in result:
-        return jsonify(result), 400
+        if "error" in result:
+            return jsonify(result), 400
 
-    result["analyzed_at"] = datetime.now().isoformat()
+        result["analyzed_at"] = datetime.now().isoformat()
 
-    # 캐시 저장
-    os.makedirs(FDD_CACHE_DIR, exist_ok=True)
-    safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in (company_name or f.filename))
-    cache_path = os.path.join(FDD_CACHE_DIR, f"{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
-    import json as _json
-    with open(cache_path, "w", encoding="utf-8") as fp:
-        _json.dump(result, fp, ensure_ascii=False, indent=2)
+        # 캐시 저장
+        try:
+            os.makedirs(FDD_CACHE_DIR, exist_ok=True)
+            safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in (company_name or f.filename))
+            cache_path = os.path.join(FDD_CACHE_DIR, f"{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+            import json as _json
+            with open(cache_path, "w", encoding="utf-8") as fp:
+                _json.dump(result, fp, ensure_ascii=False, indent=2)
+        except Exception as ce:
+            print(f"[app] FDD 캐시 저장 실패 (non-fatal): {ce}")
 
-    return jsonify(result)
+        return jsonify(result)
+
+    except Exception as e:
+        import traceback as _tb
+        print(f"[app] fdd_upload error: {_tb.format_exc()[-400:]}")
+        return jsonify({"error": f"재무실사 오류: {str(e)}"}), 500
 
 
 @app.route("/api/fdd/history", methods=["GET"])
