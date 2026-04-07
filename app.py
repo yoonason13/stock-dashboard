@@ -56,18 +56,14 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# API 경로는 모든 에러를 JSON으로 반환
-@app.errorhandler(404)
-def not_found(e):
+# API 경로 에러는 모두 JSON 반환 (HTML 500 방지)
+@app.errorhandler(Exception)
+def handle_all_errors(e):
     if request.path.startswith("/api/"):
-        return jsonify({"error": "API endpoint not found"}), 404
-    return e
-
-@app.errorhandler(500)
-def internal_error(e):
-    if request.path.startswith("/api/"):
-        return jsonify({"error": f"서버 내부 오류: {str(e)}"}), 500
-    return e
+        import traceback as _tb
+        print(f"[app] unhandled error on {request.path}: {_tb.format_exc()[-300:]}")
+        return jsonify({"error": f"서버 오류: {str(e)}"}), 500
+    raise e
 
 WATCHLIST_FILE = os.path.join("data", "watchlist.json")
 CACHE_DIR = os.path.join("data", "cache")
@@ -432,39 +428,47 @@ def fdd_get_cache(cache_file: str):
 
 @app.route("/api/research", methods=["POST"])
 def research_company():
-    body = request.get_json(silent=True) or {}
-    company_name = body.get("company", "").strip()
-    force_refresh = body.get("refresh", False)
+    try:
+        body = request.get_json(silent=True) or {}
+        company_name = body.get("company", "").strip()
+        force_refresh = body.get("refresh", False)
 
-    if not company_name:
-        return jsonify({"error": "회사명을 입력해주세요."}), 400
+        if not company_name:
+            return jsonify({"error": "회사명을 입력해주세요."}), 400
 
-    # 24시간 캐시 확인
-    if not force_refresh:
-        cached = load_research_cache(company_name)
-        if cached:
+        # 24시간 캐시 확인
+        if not force_refresh:
             try:
-                cached_at = datetime.fromisoformat(cached.get("researched_at", "2000-01-01"))
-                if (datetime.now() - cached_at).total_seconds() < 86400:
-                    return jsonify(cached)
+                cached = load_research_cache(company_name)
+                if cached:
+                    cached_at = datetime.fromisoformat(cached.get("researched_at", "2000-01-01"))
+                    if (datetime.now() - cached_at).total_seconds() < 86400:
+                        return jsonify(cached)
             except Exception:
                 pass
 
-    from services.research_service import research_private_company
-    result = research_private_company(company_name)
-    if not result:
-        return jsonify({"error": f"'{company_name}' 리서치에 실패했습니다."}), 500
+        from services.research_service import research_private_company
+        result = research_private_company(company_name)
+        if not result:
+            return jsonify({"error": f"'{company_name}' 리서치에 실패했습니다. Tavily/Claude API를 확인하세요."}), 500
 
-    result["researched_at"] = datetime.now().isoformat()
-    save_research_cache(company_name, result)
+        result["researched_at"] = datetime.now().isoformat()
 
-    # 검색 히스토리 업데이트
-    history = load_research_history()
-    history = [h for h in history if h.get("company") != company_name]
-    history.insert(0, {"company": company_name, "researched_at": result["researched_at"]})
-    save_research_history(history[:20])
+        try:
+            save_research_cache(company_name, result)
+            history = load_research_history()
+            history = [h for h in history if h.get("company") != company_name]
+            history.insert(0, {"company": company_name, "researched_at": result["researched_at"]})
+            save_research_history(history[:20])
+        except Exception as e:
+            print(f"[app] research cache/history save 실패 (non-fatal): {e}")
 
-    return jsonify(result)
+        return jsonify(result)
+
+    except Exception as e:
+        import traceback as _tb
+        print(f"[app] research_company error: {_tb.format_exc()[-400:]}")
+        return jsonify({"error": f"리서치 오류: {str(e)}"}), 500
 
 
 @app.route("/api/research/history", methods=["GET"])
@@ -524,17 +528,31 @@ def _self_ping():
         pass
 
 
-# gunicorn / 직접 실행 모두에서 스케줄러 시작
+# 스케줄러: gunicorn worker 프로세스에서만 1회 시작
 import atexit as _atexit
-_scheduler = BackgroundScheduler(timezone="Asia/Seoul")
-_scheduler.add_job(daily_refresh_job, "cron", day_of_week="mon-fri", hour=9, minute=0)
-_scheduler.add_job(_self_ping, "interval", minutes=10)  # cold start 방지
-_scheduler.start()
-_atexit.register(lambda: _scheduler.shutdown(wait=False))
+import threading as _threading
+_sched_lock = _threading.Lock()
+_sched_started = False
+
+def _start_scheduler():
+    global _sched_started
+    with _sched_lock:
+        if _sched_started:
+            return
+        _sched_started = True
+    try:
+        _scheduler = BackgroundScheduler(timezone="Asia/Seoul")
+        _scheduler.add_job(daily_refresh_job, "cron", day_of_week="mon-fri", hour=9, minute=0)
+        _scheduler.add_job(_self_ping, "interval", minutes=10)
+        _scheduler.start()
+        _atexit.register(lambda: _scheduler.shutdown(wait=False))
+        print("[app] scheduler started")
+    except Exception as e:
+        print(f"[app] scheduler start failed (non-fatal): {e}")
+
+# gunicorn은 첫 요청 전에 worker가 초기화되므로 여기서 시작
+_start_scheduler()
 
 
 if __name__ == "__main__":
-    try:
-        app.run(debug=False, port=5000, use_reloader=False)
-    finally:
-        _scheduler.shutdown()
+    app.run(debug=False, port=5000, use_reloader=False)
